@@ -623,26 +623,47 @@ export const generateDealStructure = async (companyName: string, rawData: string
  * VP Agent (Image Gen)
  */
 export const generateConceptImage = async (prompt: string): Promise<string | null> => {
-  try {
-    const ai = getClient();
-    const response = await ai.models.generateContent({
-      model: 'gemini-3-pro-image-preview',
-      contents: {
-        parts: [{ text: `A professional, modern, corporate logo for: ${prompt}. Minimalist, high fidelity, 4k, white on dark background. Brand palette: Black and Gold.` }]
-      },
-      config: {
-        imageConfig: { imageSize: "1K", aspectRatio: "1:1" }
-      }
-    });
+  const ai = getClient();
+  const parts = [{ text: `A professional, modern, corporate logo for: ${prompt}. Minimalist, high fidelity, 4k, white on dark background. Brand palette: Black and Gold.` }];
+  
+  const generateWithModel = async (model: string, useAdvancedConfig: boolean) => {
+    const config: any = {
+        imageConfig: { aspectRatio: "1:1" }
+    };
+    if (useAdvancedConfig) {
+        config.imageConfig.imageSize = "1K";
+    }
 
+    return await ai.models.generateContent({
+        model,
+        contents: { parts },
+        config
+    });
+  };
+
+  try {
+    const response = await generateWithModel('gemini-3-pro-image-preview', true);
     for (const part of response.candidates?.[0]?.content?.parts || []) {
       if (part.inlineData) {
         return `data:image/png;base64,${part.inlineData.data}`;
       }
     }
     return null;
-  } catch (error) {
-    console.warn("Image Generation Failed", error);
+  } catch (error: any) {
+    console.warn(`Primary image model failed: ${error.message}`);
+    // Fallback logic
+    if (error.message?.includes('403') || error.message?.includes('PERMISSION_DENIED') || error.message?.includes('Quota')) {
+        try {
+            const fallbackResponse = await generateWithModel('gemini-2.5-flash-image', false);
+            for (const part of fallbackResponse.candidates?.[0]?.content?.parts || []) {
+                if (part.inlineData) {
+                    return `data:image/png;base64,${part.inlineData.data}`;
+                }
+            }
+        } catch (fallbackError) {
+            console.error("Fallback image model also failed", fallbackError);
+        }
+    }
     return null;
   }
 };
@@ -762,18 +783,24 @@ export const generateSlideDesign = async (slide: Slide, companyName: string): Pr
         - Use clean, professional charts.
     `}];
 
-    const generateWithModel = async (model: string) => {
+    const generateWithModel = async (model: string, useAdvancedConfig: boolean) => {
+        const config: any = {
+            imageConfig: { aspectRatio: "16:9" }
+        };
+        // imageSize is only supported by gemini-3-pro-image-preview
+        if (useAdvancedConfig) {
+            config.imageConfig.imageSize = "1K";
+        }
+
         return await ai.models.generateContent({
             model,
             contents: { parts },
-            config: {
-                imageConfig: { imageSize: "1K", aspectRatio: "16:9" }
-            }
+            config
         });
     };
 
     try {
-        const response = await generateWithModel('gemini-3-pro-image-preview');
+        const response = await generateWithModel('gemini-3-pro-image-preview', true);
         for (const part of response.candidates?.[0]?.content?.parts || []) {
             if (part.inlineData) {
                 return `data:image/png;base64,${part.inlineData.data}`;
@@ -784,7 +811,8 @@ export const generateSlideDesign = async (slide: Slide, companyName: string): Pr
         console.warn(`Primary image model failed: ${e.message}`);
         if (e.message?.includes('403') || e.message?.includes('PERMISSION_DENIED') || e.message?.includes('Quota')) {
             try {
-                const fallbackResponse = await generateWithModel('gemini-2.5-flash-image');
+                // Use Flash model WITHOUT imageSize parameter
+                const fallbackResponse = await generateWithModel('gemini-2.5-flash-image', false);
                 for (const part of fallbackResponse.candidates?.[0]?.content?.parts || []) {
                     if (part.inlineData) {
                         return `data:image/png;base64,${part.inlineData.data}`;

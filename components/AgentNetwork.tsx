@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { Agent, AgentRole, AgentStatus } from '../types';
 import { BrainCircuit, Briefcase, Search, Activity, User, ShieldCheck, Palette, ChevronUp, ChevronDown, Zap } from 'lucide-react';
@@ -59,7 +58,7 @@ const AgentCard: React.FC<{ agent: Agent }> = ({ agent }) => {
 };
 
 export const AgentNetwork: React.FC<AgentNetworkProps> = ({ agents, activeEdge }) => {
-  const [isCollapsed, setIsCollapsed] = useState(false); // Default to expanded, user can collapse
+  const [isCollapsed, setIsCollapsed] = useState(true); // Default to collapsed to save space
 
   const md = agents.find(a => a.role === AgentRole.MD);
   const vp = agents.find(a => a.role === AgentRole.VP);

@@ -129,7 +129,30 @@ export interface Deliverable {
   createdAt: Date;
 }
 
-// --- Portfolio Types ---
+// --- Firm & Portfolio Types ---
+
+export interface FirmProfile {
+  fundName: string;
+  website?: string;
+  fundType: 'Private Equity' | 'Venture Capital' | 'Family Office' | 'Hedge Fund' | 'Corporate Dev';
+  fundSize: string; // e.g. "$500M"
+  
+  // Investment Criteria
+  checkSize: string; // e.g. "$10M - $50M"
+  targetSectors: string[]; // e.g. ["Healthcare", "SaaS"]
+  businessModels: string[]; // e.g. ["B2B", "Recurring Revenue"]
+  geographicFocus: string[]; // e.g. ["North America", "Europe"]
+  
+  // Financial Thresholds
+  revenueRange: string; // e.g. "$10M - $100M"
+  ebitdaRange: string; // e.g. "> $5M"
+  profitabilityStatus: 'Profitable' | 'Path to Profitability' | 'Growth at all costs';
+  
+  // Strategy
+  fundraisingStage: string; // e.g. "Currently Deploying Fund III"
+  strategicNotes: string; // Any specific nuances for the AI
+}
+
 export interface PortfolioCompany {
   id: string;
   name: string;

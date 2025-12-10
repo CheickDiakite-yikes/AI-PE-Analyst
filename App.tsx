@@ -1,10 +1,11 @@
+
 import React, { useState, useEffect } from 'react';
 import { AgentNetwork } from './components/AgentNetwork';
 import { ChatInterface } from './components/ChatInterface';
 import { DealDashboard } from './components/DealDashboard';
 import { PortCoDashboard } from './components/PortCoDashboard';
 import { AgentLog } from './components/AgentLog';
-import { Agent, AgentRole, AgentStatus, Message, DealData, LogEntry, DeliverableType, FileAttachment, PortfolioCompany } from './types';
+import { Agent, AgentRole, AgentStatus, Message, DealData, LogEntry, DeliverableType, FileAttachment, PortfolioCompany, FirmProfile } from './types';
 import { 
     getMDStrategy, 
     scoutPotentialTargets, 
@@ -21,7 +22,22 @@ import {
 } from './services/geminiService';
 import { Terminal, LayoutDashboard, Settings, Activity, Briefcase, Trash2 } from 'lucide-react';
 
-const HISTORICAL_MANDATE = "Historically: North American Healthcare Services & Industrials. EBITDA > $15M. Aversion: Pre-revenue.";
+// Default Profile
+const DEFAULT_PROFILE: FirmProfile = {
+    fundName: 'DiDi Capital',
+    fundType: 'Private Equity',
+    fundSize: '$500M',
+    website: 'www.didicapital.ai',
+    checkSize: '$10M - $50M',
+    targetSectors: ['Healthcare Services', 'Industrials', 'B2B Software'],
+    businessModels: ['Recurring Revenue', 'High Margin Service'],
+    geographicFocus: ['North America'],
+    revenueRange: '$10M - $100M',
+    ebitdaRange: '> $3M',
+    profitabilityStatus: 'Profitable',
+    fundraisingStage: 'Deploying Fund III',
+    strategicNotes: 'We prefer founder-led businesses. Avoid cyclical heavy industries. High retention is key.'
+};
 
 const INITIAL_AGENTS: Agent[] = [
   { id: '1', role: AgentRole.MD, name: 'Athena (MD)', status: AgentStatus.IDLE, description: 'Strategy & Risk' },
@@ -33,16 +49,6 @@ const INITIAL_AGENTS: Agent[] = [
   { id: '7', role: AgentRole.DESIGN, name: 'Sienna (Design)', status: AgentStatus.IDLE, description: 'Visual Assets' },
 ];
 
-const INITIAL_MESSAGES: Message[] = [
-    {
-        id: '0',
-        role: 'system',
-        content: `DiDi AI System initialized.\nHistorical Context: "${HISTORICAL_MANDATE}"`,
-        timestamp: new Date(),
-        sender: "SYSTEM"
-    }
-];
-
 const dateReviver = (key: string, value: any) => {
     if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(value)) {
         return new Date(value);
@@ -51,12 +57,30 @@ const dateReviver = (key: string, value: any) => {
 };
 
 function App() {
+  // --- STATE ---
   const [agents, setAgents] = useState<Agent[]>(() => {
       try {
           const saved = localStorage.getItem('didi_agents');
           return saved ? JSON.parse(saved) : INITIAL_AGENTS;
       } catch (e) { return INITIAL_AGENTS; }
   });
+
+  const [firmProfile, setFirmProfile] = useState<FirmProfile>(() => {
+      try {
+          const saved = localStorage.getItem('didi_firmProfile');
+          return saved ? JSON.parse(saved) : DEFAULT_PROFILE;
+      } catch (e) { return DEFAULT_PROFILE; }
+  });
+
+  const INITIAL_MESSAGES: Message[] = [
+    {
+        id: '0',
+        role: 'system',
+        content: `DiDi AI System initialized.\nActive Mandate: ${firmProfile.fundName} (${firmProfile.fundType}) targeting ${firmProfile.targetSectors.join(', ')}.`,
+        timestamp: new Date(),
+        sender: "SYSTEM"
+    }
+  ];
 
   const [messages, setMessages] = useState<Message[]>(() => {
       try {
@@ -96,12 +120,28 @@ function App() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [activeEdge, setActiveEdge] = useState<string | null>(null);
 
+  // --- EFFECT: PERSISTENCE ---
   useEffect(() => { try { localStorage.setItem('didi_agents', JSON.stringify(agents)); } catch(e) {} }, [agents]);
   useEffect(() => { try { localStorage.setItem('didi_messages', JSON.stringify(messages)); } catch(e) {} }, [messages]);
   useEffect(() => { try { localStorage.setItem('didi_logs', JSON.stringify(logs)); } catch(e) {} }, [logs]);
   useEffect(() => { try { localStorage.setItem('didi_currentView', currentView); } catch(e) {} }, [currentView]);
   useEffect(() => { try { localStorage.setItem('didi_dealData', JSON.stringify(dealData)); } catch(e) {} }, [dealData]);
   useEffect(() => { try { localStorage.setItem('didi_portfolio', JSON.stringify(portfolio)); } catch(e) {} }, [portfolio]);
+  useEffect(() => { try { localStorage.setItem('didi_firmProfile', JSON.stringify(firmProfile)); } catch(e) {} }, [firmProfile]);
+
+  // --- HELPERS ---
+
+  const getFormattedMandate = () => {
+      return `
+      Fund: ${firmProfile.fundName} (${firmProfile.fundType})
+      Size: ${firmProfile.fundSize}. Check Size: ${firmProfile.checkSize}.
+      Focus Sectors: ${firmProfile.targetSectors.join(', ')}.
+      Business Models: ${firmProfile.businessModels.join(', ')}.
+      Geo: ${firmProfile.geographicFocus.join(', ')}.
+      Financial Criteria: Rev ${firmProfile.revenueRange}, EBITDA ${firmProfile.ebitdaRange}, Status: ${firmProfile.profitabilityStatus}.
+      Strategic Notes: ${firmProfile.strategicNotes}
+      `;
+  };
 
   const resetState = () => {
       if (confirm("Are you sure you want to clear all data and reset the system?")) {
@@ -132,6 +172,8 @@ function App() {
       suggestedActions
     }]);
   };
+
+  // --- PIPELINE ORCHESTRATION ---
 
   const runStep = async <T,>(
     agentRole: AgentRole,
@@ -292,6 +334,7 @@ function App() {
     addMessage('user', text, undefined, undefined, attachments);
     setIsProcessing(true);
     const traceId = generateTraceId();
+    const currentMandate = getFormattedMandate();
 
     try {
       if (attachments && attachments.length > 0) {
@@ -322,7 +365,7 @@ function App() {
          const finalOpinion = await runStep(
             AgentRole.MD,
             "Formulating Investment Opinion",
-            () => getMDFinalOpinion(structuredData, HISTORICAL_MANDATE, text || "Analyze this deal"),
+            () => getMDFinalOpinion(structuredData, currentMandate, text || "Analyze this deal"),
             traceId
          );
          
@@ -333,7 +376,7 @@ function App() {
           const mdStrategy = await runStep(
               AgentRole.MD,
               "Analyzing Mandate & Strategy",
-              () => getMDStrategy(text, HISTORICAL_MANDATE),
+              () => getMDStrategy(text, currentMandate),
               traceId
           );
           addMessage('model', mdStrategy, "Athena (MD)");
@@ -438,7 +481,7 @@ function App() {
           const finalOpinion = await runStep(
               AgentRole.MD,
               "Formulating Investment Opinion",
-              () => getMDFinalOpinion(structuredData, HISTORICAL_MANDATE, text),
+              () => getMDFinalOpinion(structuredData, currentMandate, text),
               traceId
           );
           
@@ -503,7 +546,7 @@ function App() {
                     <div className="flex items-center gap-2 mt-1">
                         <Briefcase className="w-3 h-3 text-gray-500" />
                         <p className="text-[10px] text-gray-400 font-mono uppercase tracking-wide">
-                            MANDATE: {HISTORICAL_MANDATE}
+                            ACTIVE MANDATE: {firmProfile.fundName} ({firmProfile.fundType})
                         </p>
                     </div>
                 </div>
@@ -515,16 +558,20 @@ function App() {
                 </div>
              </div>
 
-             <section>
-                <h2 className="text-xs font-mono text-gray-500 mb-3 uppercase tracking-wider flex items-center gap-2">
-                    <Activity className="w-3 h-3" /> Active Agent Swarm
-                </h2>
-                <AgentNetwork agents={agents} activeEdge={activeEdge} />
-             </section>
+             {currentView === 'deal' && (
+                 <>
+                    <section>
+                        <h2 className="text-xs font-mono text-gray-500 mb-3 uppercase tracking-wider flex items-center gap-2">
+                            <Activity className="w-3 h-3" /> Active Agent Swarm
+                        </h2>
+                        <AgentNetwork agents={agents} activeEdge={activeEdge} />
+                    </section>
 
-             <section>
-                 <AgentLog logs={logs} />
-             </section>
+                    <section>
+                        <AgentLog logs={logs} />
+                    </section>
+                 </>
+             )}
 
              <section className="flex-1 min-h-[400px]">
                 <div className="flex items-center justify-between mb-3">
@@ -549,7 +596,9 @@ function App() {
                     ) : (
                         <PortCoDashboard 
                             portfolio={portfolio}
+                            firmProfile={firmProfile}
                             onIngest={handlePortfolioIngest}
+                            onUpdateProfile={setFirmProfile}
                             isProcessing={isProcessing}
                         />
                     )}
