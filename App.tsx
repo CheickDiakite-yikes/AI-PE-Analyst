@@ -4,8 +4,9 @@ import { AgentNetwork } from './components/AgentNetwork';
 import { ChatInterface } from './components/ChatInterface';
 import { DealDashboard } from './components/DealDashboard';
 import { PortCoDashboard } from './components/PortCoDashboard';
+import { PipelineDashboard } from './components/PipelineDashboard';
 import { AgentLog } from './components/AgentLog';
-import { Agent, AgentRole, AgentStatus, Message, DealData, LogEntry, DeliverableType, FileAttachment, PortfolioCompany, FirmProfile } from './types';
+import { Agent, AgentRole, AgentStatus, Message, DealData, LogEntry, DeliverableType, FileAttachment, PortfolioCompany, FirmProfile, DealRoom } from './types';
 import { 
     getMDStrategy, 
     scoutPotentialTargets, 
@@ -20,7 +21,7 @@ import {
     analyzeDocument,
     ingestPortfolioDocuments
 } from './services/geminiService';
-import { Terminal, LayoutDashboard, Settings, Activity, Briefcase, Trash2 } from 'lucide-react';
+import { Terminal, LayoutDashboard, Settings, Activity, Briefcase, Trash2, List } from 'lucide-react';
 
 // Default Profile
 const DEFAULT_PROFILE: FirmProfile = {
@@ -72,9 +73,40 @@ function App() {
       } catch (e) { return DEFAULT_PROFILE; }
   });
 
+  // --- MIGRATION LOGIC FOR EXISTING DEAL DATA ---
+  const [deals, setDeals] = useState<DealRoom[]>(() => {
+      try {
+          const savedDeals = localStorage.getItem('didi_deals');
+          if (savedDeals) return JSON.parse(savedDeals, dateReviver);
+
+          // Migration: If no 'didi_deals' but 'didi_dealData' exists, migrate it
+          const oldDealData = localStorage.getItem('didi_dealData');
+          if (oldDealData) {
+              const parsed = JSON.parse(oldDealData, dateReviver);
+              if (parsed && parsed.companyName) {
+                  const newDeal: DealRoom = {
+                      id: 'legacy-migration',
+                      title: parsed.companyName,
+                      stage: 'Diligence',
+                      data: parsed,
+                      createdAt: new Date(),
+                      lastUpdated: new Date(),
+                      tags: ['Migrated'],
+                      priority: 'Medium'
+                  };
+                  return [newDeal];
+              }
+          }
+          return [];
+      } catch (e) { return []; }
+  });
+
+  const [activeDealId, setActiveDealId] = useState<string | null>(null);
+
   const INITIAL_MESSAGES: Message[] = [
     {
         id: '0',
+        dealId: null, // Global
         role: 'system',
         content: `DiDi AI System initialized.\nActive Mandate: ${firmProfile.fundName} (${firmProfile.fundType}) targeting ${firmProfile.targetSectors.join(', ')}.`,
         timestamp: new Date(),
@@ -96,18 +128,11 @@ function App() {
       } catch (e) { return []; }
   });
 
-  const [currentView, setCurrentView] = useState<'deal' | 'portfolio'>(() => {
+  const [currentView, setCurrentView] = useState<'pipeline' | 'portfolio'>(() => {
       const saved = localStorage.getItem('didi_currentView');
-      return (saved as 'deal' | 'portfolio') || 'deal';
-  });
-
-  const [dealData, setDealData] = useState<DealData | null>(() => {
-      try {
-          const saved = localStorage.getItem('didi_dealData');
-          const parsed = saved ? JSON.parse(saved, dateReviver) : null;
-          if (parsed && (!parsed.financialModels || !parsed.lboModel)) return null;
-          return parsed;
-      } catch (e) { return null; }
+      // Default to pipeline if we were in 'deal' before but now using new architecture
+      if (saved === 'deal') return 'pipeline'; 
+      return (saved as 'pipeline' | 'portfolio') || 'pipeline';
   });
 
   const [portfolio, setPortfolio] = useState<PortfolioCompany[]>(() => {
@@ -125,7 +150,7 @@ function App() {
   useEffect(() => { try { localStorage.setItem('didi_messages', JSON.stringify(messages)); } catch(e) {} }, [messages]);
   useEffect(() => { try { localStorage.setItem('didi_logs', JSON.stringify(logs)); } catch(e) {} }, [logs]);
   useEffect(() => { try { localStorage.setItem('didi_currentView', currentView); } catch(e) {} }, [currentView]);
-  useEffect(() => { try { localStorage.setItem('didi_dealData', JSON.stringify(dealData)); } catch(e) {} }, [dealData]);
+  useEffect(() => { try { localStorage.setItem('didi_deals', JSON.stringify(deals)); } catch(e) {} }, [deals]);
   useEffect(() => { try { localStorage.setItem('didi_portfolio', JSON.stringify(portfolio)); } catch(e) {} }, [portfolio]);
   useEffect(() => { try { localStorage.setItem('didi_firmProfile', JSON.stringify(firmProfile)); } catch(e) {} }, [firmProfile]);
 
@@ -160,9 +185,11 @@ function App() {
     setAgents(prev => prev.map(a => ({ ...a, ...updates })));
   };
 
+  // Improved Message Handler
   const addMessage = (role: 'user' | 'model' | 'system', content: string, sender?: string, attachments?: any[], inputAttachments?: FileAttachment[], suggestedActions?: string[]) => {
     setMessages(prev => [...prev, {
       id: Date.now().toString(),
+      dealId: activeDealId, // Tag message with current context
       role,
       content,
       timestamp: new Date(),
@@ -171,6 +198,59 @@ function App() {
       inputAttachments,
       suggestedActions
     }]);
+  };
+
+  // Helper to safely update deal data
+  const updateActiveDeal = (updates: Partial<DealData>, titleOverride?: string) => {
+      if (!activeDealId) return;
+      setDeals(prev => prev.map(d => {
+          if (d.id === activeDealId) {
+              return {
+                  ...d,
+                  title: titleOverride || d.title,
+                  lastUpdated: new Date(),
+                  data: { ...d.data, ...updates }
+              };
+          }
+          return d;
+      }));
+  };
+
+  const createNewDealRoom = (title: string = "New Deal"): string => {
+      const newId = Date.now().toString();
+      const newDeal: DealRoom = {
+          id: newId,
+          title: title,
+          stage: 'Sourcing',
+          createdAt: new Date(),
+          lastUpdated: new Date(),
+          tags: [],
+          priority: 'Medium',
+          data: {
+              companyName: title,
+              sector: 'TBD',
+              ebitda: 0,
+              revenue: 0,
+              askingMultiple: 0,
+              impliedValue: 0,
+              lboModel: { entryMultiple: 0, exitMultiple: 0, irr: 0, moic: 0, debttoEquity: 0 },
+              memo: {
+                  executiveSummary: "Pending...",
+                  investmentRecommendation: "HOLD",
+                  recommendationRationale: "Data needed.",
+                  dealMerits: [],
+                  investmentThesis: [],
+                  keyRisks: [],
+                  riskMitigation: "N/A",
+                  marketOverview: "N/A",
+                  competitiveLandscape: "N/A",
+                  customerAnalysis: "N/A",
+                  operationalUpside: "N/A"
+              }
+          }
+      };
+      setDeals(prev => [...prev, newDeal]);
+      return newId;
   };
 
   // --- PIPELINE ORCHESTRATION ---
@@ -257,7 +337,9 @@ function App() {
   };
 
   const handleDeliverableGeneration = async (type: DeliverableType) => {
-    if (!dealData) return;
+    const currentDeal = deals.find(d => d.id === activeDealId);
+    if (!currentDeal) return;
+    
     const traceId = generateTraceId();
     
     try {
@@ -266,62 +348,70 @@ function App() {
         const slides = await runStep(
             AgentRole.DESIGN,
             `Drafting ${type} content`,
-            () => generateDeliverableContent(dealData, type),
+            () => generateDeliverableContent(currentDeal.data, type),
             traceId
         );
         
         const newDeliverable = {
             id: Date.now().toString(),
             type,
-            title: `${dealData.companyName} - ${type}`,
+            title: `${currentDeal.title} - ${type}`,
             status: 'rendering' as const,
             slides: slides,
             createdAt: new Date()
         };
 
-        setDealData(prev => prev ? {
-            ...prev,
-            deliverables: [...(prev.deliverables || []), newDeliverable]
-        } : null);
+        // Optimistic Update
+        updateActiveDeal({ 
+            deliverables: [...(currentDeal.data.deliverables || []), newDeliverable] 
+        });
 
         const updatedSlides = [...slides];
         for (let i = 0; i < slides.length; i++) {
             const imageUrl = await runStep(
                 AgentRole.DESIGN,
                 `Rendering visual for Slide ${i+1}/${slides.length}`,
-                () => generateSlideDesign(slides[i], dealData.companyName),
+                () => generateSlideDesign(slides[i], currentDeal.title),
                 traceId
             );
 
             if (imageUrl) {
                 updatedSlides[i] = { ...updatedSlides[i], imageUrl };
-                setDealData(prev => {
-                    if (!prev || !prev.deliverables) return prev;
-                    return {
-                        ...prev,
-                        deliverables: prev.deliverables.map(d => 
-                            d.id === newDeliverable.id 
-                            ? { ...d, slides: updatedSlides } 
-                            : d
-                        )
-                    };
-                });
+                // Update specific deliverable in state
+                setDeals(prevDeals => prevDeals.map(d => {
+                    if (d.id === activeDealId) {
+                        return {
+                            ...d,
+                            data: {
+                                ...d.data,
+                                deliverables: d.data.deliverables?.map(del => 
+                                    del.id === newDeliverable.id ? { ...del, slides: updatedSlides } : del
+                                )
+                            }
+                        };
+                    }
+                    return d;
+                }));
             }
         }
 
-        setDealData(prev => {
-            if (!prev || !prev.deliverables) return prev;
-            return {
-                ...prev,
-                deliverables: prev.deliverables.map(d => 
-                    d.id === newDeliverable.id 
-                    ? { ...d, status: 'completed' } 
-                    : d
-                )
-            };
-        });
+        // Final Status Update
+        setDeals(prevDeals => prevDeals.map(d => {
+            if (d.id === activeDealId) {
+                return {
+                    ...d,
+                    data: {
+                        ...d.data,
+                        deliverables: d.data.deliverables?.map(del => 
+                            del.id === newDeliverable.id ? { ...del, status: 'completed' } : del
+                        )
+                    }
+                };
+            }
+            return d;
+        }));
         
-        addMessage('system', `${type} for ${dealData.companyName} has been generated. Check the Deliverables tab.`);
+        addMessage('system', `${type} for ${currentDeal.title} has been generated. Check the Deliverables tab.`);
 
     } catch (e) {
         console.error("Deliverable gen failed", e);
@@ -338,6 +428,15 @@ function App() {
 
     try {
       if (attachments && attachments.length > 0) {
+         // --- DOCUMENT ANALYSIS FLOW ---
+         // Ensure we are in a deal room context. If not, create one.
+         let dealContextId = activeDealId;
+         if (!dealContextId) {
+             addMessage('system', "Starting new Diligence Room for document analysis...", "SYSTEM");
+             dealContextId = createNewDealRoom("New Deal (Pending Analysis)");
+             setActiveDealId(dealContextId);
+         }
+
          setActiveEdge('MD-DILIGENCE');
          addMessage('system', "Documents detected. Activating Diligence Agent for analysis...", "SYSTEM");
          
@@ -356,8 +455,8 @@ function App() {
             traceId
          );
          
-         setDealData(structuredData);
-         setCurrentView('deal');
+         updateActiveDeal({ ...structuredData }, analysisResult.companyName);
+         setDeals(prev => prev.map(d => d.id === dealContextId ? { ...d, stage: 'Diligence' } : d));
          
          setActiveEdge('ASSOCIATE-MD');
          updateAgent(AgentRole.MD, { status: AgentStatus.THINKING, currentTask: "Reviewing Diligence Findings..." });
@@ -373,6 +472,14 @@ function App() {
          addMessage('model', finalOpinion, "Athena (MD)", undefined, undefined, actions);
 
       } else {
+          // --- SOURCING FLOW ---
+          
+          if (!activeDealId) {
+              // Creating a new sourcing deal
+              const newDealId = createNewDealRoom("Sourcing Scan");
+              setActiveDealId(newDealId);
+          }
+
           const mdStrategy = await runStep(
               AgentRole.MD,
               "Analyzing Mandate & Strategy",
@@ -418,7 +525,6 @@ function App() {
           );
 
           setActiveEdge('VP-SCOUT');
-          // UPDATED: Log the "Live Search" aspect for user visibility
           const deepDivePromise = runStep(
               AgentRole.SCOUT,
               `Triangulated Deep Dive: ${bestTarget} (Financials/News/Benchmarks)`,
@@ -461,8 +567,8 @@ function App() {
 
           structuredData.groundingUrls = [...(deepDiveData.sources || []), ...locationMaps];
           if (locationMaps.length > 0) structuredData.location = "HQ Verified via Google Maps";
-          setDealData(structuredData);
-          setCurrentView('deal');
+          
+          updateActiveDeal(structuredData, structuredData.companyName);
 
           let imageAttachment = null;
           if (structuredData.companyName) {
@@ -505,6 +611,17 @@ function App() {
     }
   };
 
+  // Filter messages for current context
+  const activeMessages = messages.filter(m => {
+      // If we are in a deal room, show messages for that deal OR global system messages (if you want)
+      // Decision: Show Global + Deal Specific
+      if (activeDealId) return m.dealId === activeDealId || m.dealId === null;
+      // If we are in pipeline view, show only global messages (dealId: null)
+      return m.dealId === null;
+  });
+
+  const activeDeal = deals.find(d => d.id === activeDealId);
+
   return (
     <div className="flex h-screen bg-apex-900 text-gray-200 overflow-hidden font-sans selection:bg-apex-accent selection:text-black">
       <div className="w-16 md:w-20 flex flex-col items-center py-6 border-r border-apex-800 bg-apex-900 z-10 flex-shrink-0">
@@ -513,14 +630,15 @@ function App() {
         </div>
         <div className="flex flex-col gap-6">
           <button 
-            onClick={() => setCurrentView('deal')}
-            className={`p-3 rounded transition-colors relative group ${currentView === 'deal' ? 'bg-apex-800 text-apex-accent' : 'hover:bg-apex-800 text-gray-500'}`}
+            onClick={() => { setCurrentView('pipeline'); setActiveDealId(null); }}
+            className={`p-3 rounded transition-colors relative group ${currentView === 'pipeline' && !activeDealId ? 'bg-apex-800 text-apex-accent' : 'hover:bg-apex-800 text-gray-500'}`}
           >
             <LayoutDashboard className="w-5 h-5" />
-            <div className="absolute left-14 bg-black px-2 py-1 text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap border border-gray-800 z-50 pointer-events-none">Deal Dashboard</div>
+            <div className="absolute left-14 bg-black px-2 py-1 text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap border border-gray-800 z-50 pointer-events-none">Pipeline View</div>
           </button>
+          
           <button 
-            onClick={() => setCurrentView('portfolio')}
+            onClick={() => { setCurrentView('portfolio'); setActiveDealId(null); }}
             className={`p-3 rounded transition-colors relative group ${currentView === 'portfolio' ? 'bg-apex-800 text-apex-accent' : 'hover:bg-apex-800 text-gray-500'}`}
           >
             <Briefcase className="w-5 h-5" />
@@ -558,57 +676,69 @@ function App() {
                 </div>
              </div>
 
-             {currentView === 'deal' && (
-                 <>
-                    <section>
-                        <h2 className="text-xs font-mono text-gray-500 mb-3 uppercase tracking-wider flex items-center gap-2">
-                            <Activity className="w-3 h-3" /> Active Agent Swarm
+             {/* Dynamic Content Area */}
+             <div className="flex-1 flex flex-col min-h-0">
+                 
+                 {/* Top Swarm/Log Section (Visible only in active Deal Rooms) */}
+                 {activeDealId && (
+                     <div className="mb-6 space-y-4">
+                        <section>
+                            <h2 className="text-xs font-mono text-gray-500 mb-3 uppercase tracking-wider flex items-center gap-2">
+                                <Activity className="w-3 h-3" /> Active Agent Swarm
+                            </h2>
+                            <AgentNetwork agents={agents} activeEdge={activeEdge} />
+                        </section>
+
+                        <section>
+                            <AgentLog logs={logs} />
+                        </section>
+                     </div>
+                 )}
+
+                <section className="flex-1 min-h-[400px] flex flex-col">
+                    <div className="flex items-center justify-between mb-3">
+                        <h2 className="text-xs font-mono text-gray-500 uppercase tracking-wider">
+                            {activeDealId ? `Deal Room: ${activeDeal?.title}` : (currentView === 'pipeline' ? 'Deal Pipeline' : 'Portfolio Intelligence')}
                         </h2>
-                        <AgentNetwork agents={agents} activeEdge={activeEdge} />
-                    </section>
-
-                    <section>
-                        <AgentLog logs={logs} />
-                    </section>
-                 </>
-             )}
-
-             <section className="flex-1 min-h-[400px]">
-                <div className="flex items-center justify-between mb-3">
-                    <h2 className="text-xs font-mono text-gray-500 uppercase tracking-wider">
-                        {currentView === 'deal' ? 'Live Deal Environment' : 'Portfolio Intelligence'}
-                    </h2>
-                    {currentView === 'deal' && !dealData && <span className="text-xs text-apex-700 italic">Waiting for target identification...</span>}
-                </div>
-                <div className="h-full bg-apex-900/50 rounded-xl border border-apex-800/50 p-1 shadow-inner">
-                    {currentView === 'deal' ? (
-                        dealData ? (
-                            <DealDashboard 
-                              data={dealData} 
-                              onGenerateDeliverable={handleDeliverableGeneration}
+                    </div>
+                    
+                    <div className="flex-1 bg-apex-900/50 rounded-xl border border-apex-800/50 p-1 shadow-inner overflow-hidden relative">
+                        {currentView === 'pipeline' && !activeDealId && (
+                            <PipelineDashboard 
+                                deals={deals}
+                                onSelectDeal={(id) => setActiveDealId(id)}
+                                onCreateDeal={() => {
+                                    const id = createNewDealRoom();
+                                    setActiveDealId(id);
+                                }}
                             />
-                        ) : (
-                            <div className="h-full flex flex-col items-center justify-center text-apex-800 gap-4 py-12">
-                                <Activity className="w-16 h-16 opacity-20" />
-                                <p className="text-sm font-mono opacity-40">NO ACTIVE DEAL CONTEXT</p>
-                            </div>
-                        )
-                    ) : (
-                        <PortCoDashboard 
-                            portfolio={portfolio}
-                            firmProfile={firmProfile}
-                            onIngest={handlePortfolioIngest}
-                            onUpdateProfile={setFirmProfile}
-                            isProcessing={isProcessing}
-                        />
-                    )}
-                </div>
-             </section>
+                        )}
+
+                        {activeDealId && activeDeal && (
+                            <DealDashboard 
+                                data={activeDeal.data} 
+                                onGenerateDeliverable={handleDeliverableGeneration}
+                                onBackToPipeline={() => setActiveDealId(null)}
+                            />
+                        )}
+
+                        {currentView === 'portfolio' && (
+                            <PortCoDashboard 
+                                portfolio={portfolio}
+                                firmProfile={firmProfile}
+                                onIngest={handlePortfolioIngest}
+                                onUpdateProfile={setFirmProfile}
+                                isProcessing={isProcessing}
+                            />
+                        )}
+                    </div>
+                </section>
+             </div>
         </div>
 
-        <div className="w-full md:w-[450px] h-[50vh] md:h-full border-t md:border-t-0 border-apex-800 shadow-2xl z-20 flex flex-col flex-shrink-0">
+        <div className="w-full md:w-[450px] h-[50vh] md:h-full border-t md:border-t-0 border-apex-800 shadow-2xl z-20 flex flex-col flex-shrink-0 bg-apex-900">
           <ChatInterface 
-            messages={messages} 
+            messages={activeMessages} 
             onSendMessage={handleUserMessage} 
             isProcessing={isProcessing}
           />

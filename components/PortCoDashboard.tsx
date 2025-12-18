@@ -7,7 +7,7 @@ import {
 } from 'recharts';
 import { 
     Briefcase, Upload, FileSpreadsheet, TrendingUp, DollarSign, 
-    Activity, Building2, LayoutGrid, Settings
+    Activity, Building2, LayoutGrid, Settings, Users, Percent
 } from 'lucide-react';
 
 interface PortCoDashboardProps {
@@ -154,15 +154,15 @@ export const PortCoDashboard: React.FC<PortCoDashboardProps> = ({ portfolio, fir
                                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 flex-1 min-h-[300px]">
                                     
                                     {/* Sector Allocation */}
-                                    <div className="bg-apex-800/30 border border-apex-800 rounded-xl p-4 flex flex-col">
+                                    <div className="bg-apex-800/30 border border-apex-800 rounded-xl p-4 flex flex-col h-64">
                                         <h3 className="text-xs font-mono text-gray-400 uppercase mb-4">Sector Exposure</h3>
-                                        <div className="flex-1 min-h-[200px]">
+                                        <div className="flex-1 min-h-0">
                                             <ResponsiveContainer width="100%" height="100%">
                                                 <PieChart>
                                                     <Pie
                                                         data={sectorData}
-                                                        innerRadius={60}
-                                                        outerRadius={80}
+                                                        innerRadius={40}
+                                                        outerRadius={60}
                                                         paddingAngle={5}
                                                         dataKey="value"
                                                     >
@@ -177,11 +177,11 @@ export const PortCoDashboard: React.FC<PortCoDashboardProps> = ({ portfolio, fir
                                                 </PieChart>
                                             </ResponsiveContainer>
                                         </div>
-                                        <div className="grid grid-cols-2 gap-2 mt-4">
+                                        <div className="grid grid-cols-2 gap-2 mt-2">
                                             {sectorData.map((entry, index) => (
-                                                <div key={index} className="flex items-center gap-2 text-xs text-gray-500">
-                                                    <div className="w-2 h-2 rounded-full" style={{ backgroundColor: COLORS[index % COLORS.length] }} />
-                                                    <span>{entry.name} ({entry.value})</span>
+                                                <div key={index} className="flex items-center gap-2 text-[10px] text-gray-500">
+                                                    <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: COLORS[index % COLORS.length] }} />
+                                                    <span className="truncate">{entry.name} ({entry.value})</span>
                                                 </div>
                                             ))}
                                         </div>
@@ -194,33 +194,45 @@ export const PortCoDashboard: React.FC<PortCoDashboardProps> = ({ portfolio, fir
                                             <span className="text-[10px] text-gray-600 font-mono">{portfolio.length} RECORDS</span>
                                         </div>
                                         <div className="flex-1 overflow-auto scrollbar-thin">
-                                            <table className="w-full text-left text-sm text-gray-400">
+                                            <table className="w-full text-left text-sm text-gray-400 whitespace-nowrap">
                                                 <thead className="text-xs text-gray-500 uppercase bg-apex-900 font-mono sticky top-0 z-10">
                                                     <tr>
                                                         <th className="px-4 py-3 font-medium">Company</th>
                                                         <th className="px-4 py-3 font-medium">Sector</th>
-                                                        <th className="px-4 py-3 font-medium">Status</th>
+                                                        <th className="px-4 py-3 font-medium">Fund</th>
+                                                        <th className="px-4 py-3 font-medium">Own %</th>
                                                         <th className="px-4 py-3 font-medium text-right">Rev ($M)</th>
                                                         <th className="px-4 py-3 font-medium text-right">EBITDA ($M)</th>
-                                                        <th className="px-4 py-3 font-medium">Year</th>
+                                                        <th className="px-4 py-3 font-medium">Status</th>
                                                     </tr>
                                                 </thead>
                                                 <tbody>
                                                     {portfolio.map((p) => (
                                                         <tr key={p.id} className="border-b border-apex-800/50 hover:bg-white/5 transition-colors">
-                                                            <td className="px-4 py-3 font-bold text-white">{p.name}</td>
-                                                            <td className="px-4 py-3">{p.sector}</td>
+                                                            <td className="px-4 py-3 font-bold text-white">
+                                                                {p.name}
+                                                                {p.boardSeats ? <span className="ml-2 text-[9px] bg-apex-700 px-1 py-0.5 rounded text-gray-300" title="Board Seats">{p.boardSeats} Seats</span> : null}
+                                                            </td>
                                                             <td className="px-4 py-3">
-                                                                <span className={`
-                                                                    text-[10px] uppercase px-2 py-0.5 rounded font-bold
-                                                                    ${p.investmentStatus === 'Active' ? 'bg-emerald-900/30 text-emerald-400' : 'bg-gray-800 text-gray-500'}
-                                                                `}>
-                                                                    {p.investmentStatus}
-                                                                </span>
+                                                                {p.sector}
+                                                                {p.subsector && <span className="block text-[10px] text-gray-500">{p.subsector}</span>}
+                                                            </td>
+                                                            <td className="px-4 py-3 text-xs">{p.fund || "-"}</td>
+                                                            <td className="px-4 py-3 text-xs font-mono text-apex-accentDim">
+                                                                {p.ownershipPercentage ? `${(p.ownershipPercentage * 100).toFixed(1)}%` : '-'}
                                                             </td>
                                                             <td className="px-4 py-3 text-right font-mono text-gray-300">{p.revenue.toLocaleString()}</td>
                                                             <td className="px-4 py-3 text-right font-mono text-apex-accent">{p.ebitda.toLocaleString()}</td>
-                                                            <td className="px-4 py-3 text-gray-500 font-mono text-xs">{p.entryDate || "-"}</td>
+                                                            <td className="px-4 py-3">
+                                                                <span className={`
+                                                                    text-[10px] uppercase px-2 py-0.5 rounded font-bold
+                                                                    ${p.investmentStatus === 'Active' ? 'bg-emerald-900/30 text-emerald-400' : 
+                                                                      p.investmentStatus === 'Exited' ? 'bg-blue-900/30 text-blue-400' : 'bg-gray-800 text-gray-500'}
+                                                                `}>
+                                                                    {p.investmentStatus}
+                                                                </span>
+                                                                {p.exitDate && <span className="block text-[9px] text-gray-500 mt-0.5">Exit: {p.exitDate}</span>}
+                                                            </td>
                                                         </tr>
                                                     ))}
                                                 </tbody>

@@ -1,5 +1,7 @@
+
 import { GoogleGenAI, Type } from "@google/genai";
 import { DealData, DeliverableType, Slide, FileAttachment, PortfolioCompany, InvestmentMemo } from "../types";
+import * as XLSX from "xlsx";
 
 // Helper to get client
 const getClient = () => new GoogleGenAI({ apiKey: process.env.API_KEY });
@@ -299,29 +301,45 @@ export const analyzeDocument = async (files: FileAttachment[], prompt: string): 
         const ai = getClient();
         const parts: any[] = [
             { text: `
-                Act as a Private Equity Diligence Agent for DiDi AI.
-                Analyze the provided document(s).
+                Act as a Senior Private Equity Diligence Agent for DiDi AI.
+                Analyze the provided document(s) in extreme detail.
                 User Context: "${prompt}"
 
                 TASK:
-                1. Extract key metrics (EBITDA, Revenue).
-                2. If specific metrics are missing in the doc, INFER them from context or sector averages (e.g. if OpEx is listed, back into margins).
-                3. Return a structured JSON object.
+                1. **Extract EXACT metrics** (EBITDA, Revenue, Margins) found in the text or tables. Do not hallucinate.
+                2. If specific metrics are missing, infer them using logical accounting deductions (e.g. Revenue - OpEx = EBITDA proxy).
+                3. **Identify Risks**: Look for fine print about customer concentration, litigation, or declining growth.
+                4. **Thesis Building**: Why is this a good deal based *strictly* on this document?
+
+                Return a structured JSON object suitable for a deal model.
             ` }
         ];
 
-        files.forEach(file => {
-            const base64Data = file.data.split(',')[1]; 
-            parts.push({
-                inlineData: {
-                    mimeType: file.type,
-                    data: base64Data
-                }
-            });
-        });
+        // Client-side Excel parsing for better accuracy (similar to ingestPortfolioDocuments)
+        for (const file of files) {
+            if (file.type.includes('spreadsheet') || file.type.includes('excel') || file.name.endsWith('.xlsx') || file.name.endsWith('.csv')) {
+                const base64Data = file.data.split(',')[1];
+                const workbook = XLSX.read(base64Data, { type: 'base64' });
+                let fileSummary = `FILE: ${file.name}\n`;
+                workbook.SheetNames.forEach(sheetName => {
+                    const sheet = workbook.Sheets[sheetName];
+                    const csv = XLSX.utils.sheet_to_csv(sheet);
+                    fileSummary += `\n--- SHEET: ${sheetName} ---\n${csv}\n`;
+                });
+                parts.push({ text: fileSummary });
+            } else {
+                 const base64Data = file.data.split(',')[1]; 
+                 parts.push({
+                    inlineData: {
+                        mimeType: file.type,
+                        data: base64Data
+                    }
+                 });
+            }
+        }
 
         const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash',
+            model: 'gemini-3-pro-preview', // Upgraded for high fidelity document reasoning
             contents: { parts },
             config: {
                 responseMimeType: "application/json",
@@ -361,27 +379,68 @@ export const analyzeDocument = async (files: FileAttachment[], prompt: string): 
 };
 
 /**
- * Diligence Agent: Portfolio Ingestion
+ * Diligence Agent: Portfolio Ingestion (Advanced Multi-Tab Support)
  */
 export const ingestPortfolioDocuments = async (files: FileAttachment[]): Promise<PortfolioCompany[]> => {
     try {
         const ai = getClient();
+        const spreadsheetContents: string[] = [];
+
+        // --- Client-Side Excel/CSV Parsing ---
+        for (const file of files) {
+            if (file.type.includes('spreadsheet') || file.type.includes('excel') || file.name.endsWith('.xlsx') || file.name.endsWith('.csv')) {
+                const base64Data = file.data.split(',')[1];
+                const workbook = XLSX.read(base64Data, { type: 'base64' });
+                
+                let fileSummary = `FILE: ${file.name}\n`;
+                workbook.SheetNames.forEach(sheetName => {
+                    const sheet = workbook.Sheets[sheetName];
+                    const csv = XLSX.utils.sheet_to_csv(sheet);
+                    fileSummary += `\n--- SHEET: ${sheetName} ---\n${csv}\n`;
+                });
+                spreadsheetContents.push(fileSummary);
+            }
+        }
+
         const parts: any[] = [
-            { text: `Act as a Private Equity Operations Agent for DiDi AI. Parse this portfolio data.` }
+            { text: `
+                Act as a Senior Private Equity Operations Analyst.
+                Your task is to ingest portfolio data and extract a master list of portfolio companies.
+                
+                INPUT DATA:
+                ${spreadsheetContents.join('\n\n')}
+                
+                TASK:
+                1. **Master Record**: Look for the tab that lists Company Name, Sector, Fund, etc. (often named 'PortCos' or 'Holdings').
+                2. **Financials**: Look for columns or other tabs with Revenue and EBITDA. If LTM (Last Twelve Months) is available, prioritize that.
+                3. **Status Mapping**:
+                   - 'Unrealized' -> 'Active'
+                   - 'Realized' -> 'Exited'
+                   - 'Written Off' -> 'Exited'
+                4. **Metrics**:
+                   - 'OwnershipPct' or 'Ownership': Return as a number out of 100 (e.g. 0.815 becomes 81.5).
+                   - 'BoardSeats': Extract integer.
+                5. **Subsector**: If available, extract it.
+                6. **Dates**: Standardize dates to YYYY-MM-DD.
+                
+                Output a clean JSON array of PortfolioCompany objects.
+            ` }
         ];
 
         files.forEach(file => {
-            const base64Data = file.data.split(',')[1]; 
-            parts.push({
-                inlineData: {
-                    mimeType: file.type,
-                    data: base64Data
-                }
-            });
+            if (!file.type.includes('spreadsheet') && !file.type.includes('excel') && !file.name.endsWith('.xlsx') && !file.name.endsWith('.csv')) {
+                 const base64Data = file.data.split(',')[1];
+                 parts.push({
+                    inlineData: {
+                        mimeType: file.type,
+                        data: base64Data
+                    }
+                 });
+            }
         });
 
         const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash',
+            model: 'gemini-3-pro-preview',
             contents: { parts },
             config: {
                 responseMimeType: "application/json",
@@ -393,12 +452,16 @@ export const ingestPortfolioDocuments = async (files: FileAttachment[]): Promise
                             id: { type: Type.STRING },
                             name: { type: Type.STRING },
                             sector: { type: Type.STRING },
+                            subsector: { type: Type.STRING },
                             location: { type: Type.STRING },
+                            fund: { type: Type.STRING },
                             investmentStatus: { type: Type.STRING, enum: ['Active', 'Exited', 'Watchlist'] },
+                            entryDate: { type: Type.STRING },
+                            exitDate: { type: Type.STRING },
+                            ownershipPercentage: { type: Type.NUMBER },
+                            boardSeats: { type: Type.NUMBER },
                             revenue: { type: Type.NUMBER },
                             ebitda: { type: Type.NUMBER },
-                            grossMargin: { type: Type.NUMBER },
-                            entryDate: { type: Type.STRING },
                             description: { type: Type.STRING }
                         },
                         required: ["name", "sector", "revenue", "ebitda"]
@@ -728,15 +791,38 @@ export const generateDeliverableContent = async (dealData: DealData, type: Deliv
         const ai = getClient();
         const pageLimit = type === 'Teaser' || type === 'One Pager' ? 3 : 10;
         
+        // Contextual Injection to force the model to use real data
+        const dealContext = `
+        FINANCIAL HIGHLIGHTS:
+        - Revenue: $${dealData.revenue.toLocaleString()}M
+        - EBITDA: $${dealData.ebitda.toLocaleString()}M
+        - Implied EV: $${dealData.impliedValue.toLocaleString()}M
+        - LBO IRR: ${dealData.lboModel?.irr}%
+        - Asking Multiple: ${dealData.askingMultiple}x
+        
+        KEY INVESTMENT THESIS:
+        ${dealData.memo?.investmentThesis?.map(t => `- ${t}`).join('\n') || "N/A"}
+        
+        KEY RISKS:
+        ${dealData.memo?.keyRisks?.map(r => `- ${r}`).join('\n') || "N/A"}
+        
+        MARKET OVERVIEW:
+        ${dealData.memo?.marketOverview || "N/A"}
+        `;
+
         const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash',
+            model: 'gemini-3-pro-preview',
             contents: `
                 Act as a DiDi AI Investment Banking Associate.
                 Create a slide outline for a "${type}" document for "${dealData.companyName}".
                 
+                DEAL CONTEXT (MUST USE REAL DATA):
+                ${dealContext}
+
                 REQUIREMENTS:
                 - Max ${pageLimit} slides.
                 - Slide 1 must be the Title Slide.
+                - **CRITICAL**: The contentPoints MUST include the real numbers (Revenue, EBITDA, IRR) provided in the context above. Do not use generic placeholders like "$XXM".
                 - Visual Directive: Describe specific charts (e.g. "Waterfall chart of synergies", "Bar chart of Revenue Growth").
                 
                 Return JSON.
@@ -751,7 +837,8 @@ export const generateDeliverableContent = async (dealData: DealData, type: Deliv
                             title: { type: Type.STRING },
                             contentPoints: { type: Type.ARRAY, items: { type: Type.STRING } },
                             visualDirective: { type: Type.STRING }
-                        }
+                        },
+                        required: ["title", "contentPoints", "visualDirective"]
                     }
                 }
             }

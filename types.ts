@@ -53,6 +53,7 @@ export interface FileAttachment {
 
 export interface Message {
   id: string;
+  dealId?: string | null; // Null implies Global/HQ context
   role: 'user' | 'model' | 'system';
   content: string;
   timestamp: Date;
@@ -157,9 +158,14 @@ export interface PortfolioCompany {
   id: string;
   name: string;
   sector: string;
+  subsector?: string;
   location?: string;
+  fund?: string;
   entryDate?: string; // YYYY-MM-DD or Year
+  exitDate?: string;
   investmentStatus: 'Active' | 'Exited' | 'Watchlist';
+  ownershipPercentage?: number;
+  boardSeats?: number;
   
   // Financials
   revenue: number; // LTM
@@ -210,4 +216,19 @@ export interface DealData {
 
   // Context
   portfolioContext?: PortfolioCompany[]; // List of portcos for benchmarking
+}
+
+// --- Deal Room Types ---
+
+export type DealStage = 'Sourcing' | 'Screening' | 'Diligence' | 'IC Review' | 'Closed' | 'Passed';
+
+export interface DealRoom {
+    id: string;
+    title: string; // Usually company name or "Project [Codename]"
+    stage: DealStage;
+    data: DealData;
+    createdAt: Date;
+    lastUpdated: Date;
+    tags: string[];
+    priority: 'High' | 'Medium' | 'Low';
 }

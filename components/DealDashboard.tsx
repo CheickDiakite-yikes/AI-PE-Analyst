@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useCallback } from 'react';
 import { DealData, FinancialSection, FinancialRow, Deliverable, DeliverableType } from '../types';
 import { 
@@ -7,18 +8,20 @@ import {
 import { 
   AlertTriangle, CheckCircle, ExternalLink, MapPin, Search, 
   FileText, PieChart, Target, Filter, Table as TableIcon, Download, Grid, Calculator, Presentation,
-  Palette, Image as ImageIcon, Loader2, ChevronLeft, ChevronRight, X, Maximize2, Printer, Layout, ShieldAlert, Trophy, Users, BarChart2
+  Palette, Image as ImageIcon, Loader2, ChevronLeft, ChevronRight, X, Maximize2, Printer, Layout, ShieldAlert, Trophy, Users, BarChart2,
+  ArrowLeft
 } from 'lucide-react';
 
 interface DealDashboardProps {
   data: DealData;
   isLoading?: boolean;
   onGenerateDeliverable?: (type: DeliverableType) => void;
+  onBackToPipeline: () => void;
 }
 
 type Tab = 'sourcing' | 'memo' | 'financials' | 'lbo' | 'valuation' | 'market' | 'deliverables';
 
-export const DealDashboard: React.FC<DealDashboardProps> = ({ data, isLoading, onGenerateDeliverable }) => {
+export const DealDashboard: React.FC<DealDashboardProps> = ({ data, isLoading, onGenerateDeliverable, onBackToPipeline }) => {
   const [activeTab, setActiveTab] = useState<Tab>('memo');
 
   if (isLoading) {
@@ -79,16 +82,26 @@ export const DealDashboard: React.FC<DealDashboardProps> = ({ data, isLoading, o
   };
 
   return (
-    <div className="flex flex-col h-full">
-      <div className="flex items-center justify-between border-b border-apex-800 pr-4">
-        <div className="flex items-center gap-1 overflow-x-auto scrollbar-none">
-            <TabButton active={activeTab === 'sourcing'} onClick={() => setActiveTab('sourcing')} icon={<Filter className="w-3 h-3" />} label="SOURCING" />
-            <TabButton active={activeTab === 'memo'} onClick={() => setActiveTab('memo')} icon={<FileText className="w-3 h-3" />} label="MEMO" />
-            <TabButton active={activeTab === 'financials'} onClick={() => setActiveTab('financials')} icon={<Grid className="w-3 h-3" />} label="FINANCIALS" />
-            <TabButton active={activeTab === 'lbo'} onClick={() => setActiveTab('lbo')} icon={<Calculator className="w-3 h-3" />} label="LBO" />
-            <TabButton active={activeTab === 'valuation'} onClick={() => setActiveTab('valuation')} icon={<PieChart className="w-3 h-3" />} label="VALUATION" />
-            <TabButton active={activeTab === 'market'} onClick={() => setActiveTab('market')} icon={<Search className="w-3 h-3" />} label="MARKET" />
-            <TabButton active={activeTab === 'deliverables'} onClick={() => setActiveTab('deliverables')} icon={<Presentation className="w-3 h-3" />} label="DELIVERABLES" />
+    <div className="flex flex-col h-full animate-fade-in">
+      <div className="flex items-center justify-between border-b border-apex-800 pr-4 pb-2">
+        <div className="flex items-center gap-4">
+            <button 
+                onClick={onBackToPipeline}
+                className="flex items-center gap-2 text-xs font-mono text-gray-500 hover:text-white transition-colors hover:bg-apex-800 px-2 py-1 rounded"
+            >
+                <ArrowLeft className="w-3 h-3" />
+                PIPELINE
+            </button>
+            <div className="h-4 w-px bg-apex-800" />
+            <div className="flex items-center gap-1 overflow-x-auto scrollbar-none">
+                <TabButton active={activeTab === 'sourcing'} onClick={() => setActiveTab('sourcing')} icon={<Filter className="w-3 h-3" />} label="SOURCING" />
+                <TabButton active={activeTab === 'memo'} onClick={() => setActiveTab('memo')} icon={<FileText className="w-3 h-3" />} label="MEMO" />
+                <TabButton active={activeTab === 'financials'} onClick={() => setActiveTab('financials')} icon={<Grid className="w-3 h-3" />} label="FINANCIALS" />
+                <TabButton active={activeTab === 'lbo'} onClick={() => setActiveTab('lbo')} icon={<Calculator className="w-3 h-3" />} label="LBO" />
+                <TabButton active={activeTab === 'valuation'} onClick={() => setActiveTab('valuation')} icon={<PieChart className="w-3 h-3" />} label="VALUATION" />
+                <TabButton active={activeTab === 'market'} onClick={() => setActiveTab('market')} icon={<Search className="w-3 h-3" />} label="MARKET" />
+                <TabButton active={activeTab === 'deliverables'} onClick={() => setActiveTab('deliverables')} icon={<Presentation className="w-3 h-3" />} label="DELIVERABLES" />
+            </div>
         </div>
         
         {data.financialModels && activeTab !== 'deliverables' && (
@@ -120,7 +133,7 @@ const TabButton: React.FC<{ active: boolean; onClick: () => void; icon: React.Re
   <button 
     onClick={onClick}
     className={`
-      flex items-center gap-2 px-4 py-3 text-xs font-mono font-bold tracking-wider transition-all whitespace-nowrap
+      flex items-center gap-2 px-4 py-3 text-xs font-mono font-bold tracking-wider transition-all whitespace-nowrap rounded-t-lg
       ${active 
         ? 'text-apex-accent border-b-2 border-apex-accent bg-apex-accent/5' 
         : 'text-gray-500 hover:text-gray-300 hover:bg-apex-800/30'}
@@ -379,7 +392,7 @@ const DeliverablesView: React.FC<{ data: DealData; onGenerate?: (type: Deliverab
     const downloadSlide = () => {
         if (!selectedDeck) return;
         const currentSlide = selectedDeck.slides[slideIndex];
-        if (!currentSlide.imageUrl) return;
+        if (!currentSlide?.imageUrl) return;
         
         const link = document.createElement("a");
         link.href = currentSlide.imageUrl;
@@ -421,6 +434,19 @@ const DeliverablesView: React.FC<{ data: DealData; onGenerate?: (type: Deliverab
 
     if (selectedDeckId && selectedDeck) {
         const currentSlide = selectedDeck.slides[slideIndex];
+
+        // Safe check if currentSlide is undefined
+        if (!currentSlide) {
+            return (
+                <div className="fixed inset-0 z-50 bg-apex-900 flex items-center justify-center">
+                    <div className="text-center">
+                         <AlertTriangle className="w-12 h-12 text-red-500 mx-auto mb-4" />
+                         <h3 className="text-white font-bold">Slide Data Error</h3>
+                         <button onClick={() => setSelectedDeckId(null)} className="mt-4 text-gray-400 underline">Close Viewer</button>
+                    </div>
+                </div>
+            )
+        }
 
         return (
             <div className="fixed inset-0 z-50 bg-apex-900 flex flex-col animate-in fade-in duration-200">
@@ -535,7 +561,7 @@ const DeliverablesView: React.FC<{ data: DealData; onGenerate?: (type: Deliverab
                                 <div>
                                     <h5 className="text-[10px] text-gray-500 uppercase font-mono mb-3 tracking-wider">Key Talking Points</h5>
                                     <ul className="space-y-3">
-                                        {currentSlide.contentPoints.map((pt, i) => (
+                                        {(currentSlide.contentPoints || []).map((pt, i) => (
                                             <li key={i} className="flex gap-3 text-sm text-gray-300 leading-relaxed">
                                                 <div className="w-1.5 h-1.5 rounded-full bg-apex-700 mt-1.5 flex-shrink-0" />
                                                 {pt}
@@ -608,7 +634,7 @@ const DeliverablesView: React.FC<{ data: DealData; onGenerate?: (type: Deliverab
                             className="group relative cursor-pointer border border-apex-800 hover:border-pink-500/50 rounded-lg overflow-hidden transition-all hover:shadow-lg hover:shadow-pink-900/10"
                         >
                             <div className="aspect-video bg-apex-900 relative">
-                                {deck.slides[0]?.imageUrl ? (
+                                {(deck.slides && deck.slides[0]?.imageUrl) ? (
                                     <img src={deck.slides[0].imageUrl} alt="Cover" className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-all duration-500 group-hover:scale-105" />
                                 ) : (
                                     <div className="w-full h-full flex flex-col items-center justify-center bg-apex-900 gap-2">
@@ -630,7 +656,7 @@ const DeliverablesView: React.FC<{ data: DealData; onGenerate?: (type: Deliverab
                                     <div className="flex justify-between items-end">
                                         <div>
                                             <h4 className="text-sm font-bold text-white group-hover:text-pink-400 transition-colors">{deck.type}</h4>
-                                            <p className="text-[10px] text-gray-400 font-mono mt-0.5">{deck.slides.length} Slides</p>
+                                            <p className="text-[10px] text-gray-400 font-mono mt-0.5">{deck.slides?.length || 0} Slides</p>
                                         </div>
                                         <div className={`
                                             w-6 h-6 rounded-full flex items-center justify-center border
