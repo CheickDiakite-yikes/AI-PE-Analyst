@@ -1,4 +1,4 @@
-# Apex Capital AI (DiDi) 🏦 
+# AI PE Analysts (by DiDi) 🏦 
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Status](https://img.shields.io/badge/status-SOTA-emerald)
@@ -6,7 +6,7 @@
 
 **The World's First Open-Source Autonomous Private Equity Firm.**
 
-Apex Capital AI (internally "DiDi") is a State-of-the-Art (SOTA) agentic system designed to automate the end-to-end investment lifecycle. It utilizes a swarm of specialized AI agents to source deals, perform deep diligence, build complex LBO models, and generate investment committee marketing materials without human intervention.
+DiDi is a State-of-the-Art (SOTA) agentic system designed to automate the end-to-end investment lifecycle. It utilizes a swarm of specialized AI agents to source deals, perform deep diligence, build complex LBO models, and generate investment committee marketing materials without human intervention.
 
 Built on **Google's Gemini 3 & 2.5** ecosystem, it features "Thinking" capabilities for complex reasoning, Search Grounding for live data triangulation, and high-fidelity image generation for deliverables.
 
